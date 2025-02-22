@@ -1,5 +1,5 @@
 {
-  "name": "my-first-worker",
+  "name": "r2-proxy",
   "version": "0.0.0",
   "private": true,
   "scripts": {
@@ -11,6 +11,9 @@
     "format": "biome format --write src",
     "lint": "biome format --write src"
   },
+  "dependencies": {
+    "hono": "^4.7.2"
+  },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@cloudflare/vitest-pool-workers": "^0.6.4",
@@ -19,11 +22,13 @@
     "vitest": "~2.1.9",
     "wrangler": "^3.109.2"
   },
+  "pnpm": {
+    "ignoredBuiltDependencies": [
+      "@biomejs/biome"
+    ]
+  },
   "volta": {
     "node": "23.8.0",
     "pnpm": "10.4.1"
-  },
-  "pnpm": {
-    "ignoredBuiltDependencies": ["@biomejs/biome"]
   }
 }

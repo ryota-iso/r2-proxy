@@ -1,18 +1,59 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Bind resources to your worker in `wrangler.jsonc`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
+import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 
-export default {
-  async fetch(request, env, ctx): Promise<Response> {
-    return new Response("Hello World!");
-  },
-} satisfies ExportedHandler<Env>;
+type Bindings = {
+  R2_BUCKET: R2Bucket;
+};
+
+const app = new Hono<{ Bindings: Bindings }>();
+
+app.get("*", async (c) => {
+  // キャッシュ確認
+  const cacheKey = c.req.url;
+  const cache = caches.default;
+  const cachedResponse = await cache.match(cacheKey);
+  if (cachedResponse) return cachedResponse;
+
+  // R2からオブジェクトを取得 (リクエストパスの先頭の'/'を削除)
+  const object = await c.env.R2_BUCKET.get(c.req.path.slice(1));
+  if (!object) {
+    throw new HTTPException(404, { message: "Object not found" });
+  }
+
+  // ETag検証
+  const etag = object.httpEtag;
+  const ifNoneMatch = c.req.header("If-None-Match");
+  if (etag && ifNoneMatch && etag === ifNoneMatch) {
+    return c.status(304);
+  }
+
+  // レスポンス生成
+  const response = c.body(object.body, {
+    headers: {
+      "Content-Type": object.httpMetadata?.contentType || 'application/octet-stream',
+      "ETag": etag || "",
+      "Cache-Control": "public, max-age=3600",
+    },
+  });
+
+  // 非同期でキャッシュへ保存
+  if (response.ok) {
+    c.executionCtx.waitUntil(cache.put(cacheKey, response.clone()));
+  }
+  return response;
+});
+
+// エラーハンドリング
+app.onError((err, c) => {
+  console.error("Unhandled Error:", err);
+  return c.json(
+    {
+      error: {
+        message: err.message || "Internal Server Error",
+      },
+    },
+    500,
+  );
+});
+
+export default app;
